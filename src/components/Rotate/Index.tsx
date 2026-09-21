@@ -52,14 +52,14 @@ const Index:FC<Props> = forwardRef<RotateRef, Props>((props: Props, ref) => {
   const rootRef = useRef<any>(null)
   const dragBarRef = useRef<any>(null)
   const dragBlockRef = useRef<any>(null)
+  const thumbBlockRef = useRef<any>(null)
 
   const handler = useHandler(
     localData,
     localEvents,
-    localConfig,
-    rootRef,
     dragBlockRef,
     dragBarRef,
+    thumbBlockRef,
     () => {
       setLocalData({...localData, ...defaultRotateData()})
     });
@@ -145,8 +145,9 @@ const Index:FC<Props> = forwardRef<RotateRef, Props>((props: Props, ref) => {
         <div className={cstyles.thumb}>
           <div
             className={cstyles.thumbBlock}
+            ref={thumbBlockRef}
             style={{
-              transform: `rotate(${handler.getState().thumbAngle}deg)`,
+              transform: `rotate(${localData.angle || 0}deg)`,
               ...(localData.thumbSize > 0 ? {
                 width: localData.thumbSize + "px",
                 height: localData.thumbSize + "px"
@@ -169,12 +170,10 @@ const Index:FC<Props> = forwardRef<RotateRef, Props>((props: Props, ref) => {
         <div
           className={classnames(styles.dragBlock, !hasDisplayImageState && styles.disabled)}
           ref={dragBlockRef}
-          onMouseDown={handler.dragEvent}
-          style={{left: handler.getState().dragLeft + "px"}}
+          onPointerDown={handler.dragEvent}
         >
           <div
             className={styles.dragBlockInline}
-            onTouchStart={handler.dragEvent}
           >
             <ArrowsIcon />
           </div>
