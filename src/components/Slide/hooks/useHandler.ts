@@ -4,216 +4,273 @@
  * @Email wengaolng@gmail.com
  **/
 
-import {MutableRefObject, useCallback, useEffect, useState} from "react";
+import {MutableRefObject, useCallback, useEffect, useRef} from "react";
 import {SlideData} from "../meta/data";
 import {SlideEvent} from "../meta/event";
-import {checkTargetFather} from "../../../helper/helper";
-import {SlideConfig} from "../meta/config";
+
+interface Position {
+  dragLeft: number;
+  thumbLeft: number;
+}
+
+interface DragGeometry {
+  pointerId: number;
+  startClientX: number;
+  startPosition: Position;
+  maxDragLeft: number;
+  maxThumbLeft: number;
+  thumbRatio: number;
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
 
 export const useHandler = (
   data: SlideData,
   event: SlideEvent,
-  config: SlideConfig,
-  rootRef: MutableRefObject<any>,
   containerRef: MutableRefObject<any>,
   tileRef: MutableRefObject<any>,
   dragBlockRef: MutableRefObject<any>,
-  dragBarRef: MutableRefObject<any>,
   clearCbs: () => void,
 ) => {
-  const [dragLeft, setDragLeft] = useState<number>(0)
-  const [thumbLeft, setThumbLeft] = useState<number>(data.thumbX || 0)
-  const [isFreeze, setIsFreeze] = useState<boolean>(false)
+  const dataRef = useRef(data)
+  const eventRef = useRef(event)
+  const positionRef = useRef<Position>({dragLeft: 0, thumbLeft: data.thumbX || 0})
+  const pendingPositionRef = useRef<Position | null>(null)
+  const dragGeometryRef = useRef<DragGeometry | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
+  const hasMovedRef = useRef(false)
 
-  useEffect(() => {
-    if(!isFreeze){
-      setThumbLeft(data.thumbX || 0)
+  dataRef.current = data
+  eventRef.current = event
+
+  const applyPosition = useCallback((position: Position, notifyMove = false) => {
+    const initialThumbLeft = dataRef.current.thumbX || 0
+    positionRef.current = position
+
+    if (dragBlockRef.current) {
+      dragBlockRef.current.style.transform = `translate3d(${position.dragLeft}px, 0, 0)`
     }
-  }, [data, setThumbLeft])
+    if (tileRef.current) {
+      tileRef.current.style.transform = `translate3d(${position.thumbLeft - initialThumbLeft}px, 0, 0)`
+    }
+    if (notifyMove) {
+      eventRef.current.move && eventRef.current.move(position.thumbLeft, dataRef.current.thumbY || 0)
+    }
+  }, [dragBlockRef, tileRef])
 
-  const resetData = useCallback<any>(() => {
-    setDragLeft(0)
-    setThumbLeft(data.thumbX || 0)
-  }, [setDragLeft, setThumbLeft, data.thumbX])
+  const flushAnimationFrame = useCallback((notifyMove = true) => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
 
-  const dragEvent = useCallback<any>((e: Event|any) => {
-    if (!checkTargetFather(dragBarRef.current, e)) {
+    const position = pendingPositionRef.current
+    pendingPositionRef.current = null
+    if (position) {
+      applyPosition(position, notifyMove)
+    }
+  }, [applyPosition])
+
+  const schedulePosition = useCallback((position: Position) => {
+    pendingPositionRef.current = position
+    if (animationFrameRef.current !== null) {
       return
     }
 
-    const touch = e.touches && e.touches[0];
-    const offsetLeft = dragBlockRef.current.offsetLeft
+    animationFrameRef.current = requestAnimationFrame(() => {
+      animationFrameRef.current = null
+      const nextPosition = pendingPositionRef.current
+      pendingPositionRef.current = null
+      if (nextPosition) {
+        applyPosition(nextPosition, true)
+      }
+    })
+  }, [applyPosition])
+
+  const clearActiveDrag = useCallback(() => {
+    const geometry = dragGeometryRef.current
+    const dragBlock = dragBlockRef.current
+    dragGeometryRef.current = null
+    hasMovedRef.current = false
+    if (geometry && dragBlock && dragBlock.hasPointerCapture && dragBlock.hasPointerCapture(geometry.pointerId)) {
+      dragBlock.releasePointerCapture(geometry.pointerId)
+    }
+    pendingPositionRef.current = null
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+  }, [dragBlockRef])
+
+  const resetData = useCallback(() => {
+    clearActiveDrag()
+    applyPosition({dragLeft: 0, thumbLeft: dataRef.current.thumbX || 0})
+  }, [applyPosition, clearActiveDrag])
+
+  useEffect(() => {
+    resetData()
+  }, [data.thumbX, data.thumbY, data.image, data.thumb, resetData])
+
+  useEffect(() => () => {
+    clearActiveDrag()
+  }, [clearActiveDrag])
+
+  const dragEvent = useCallback((e: any) => {
+    if (e.button !== undefined && e.button !== 0) {
+      return
+    }
+    if (!containerRef.current || !tileRef.current || !dragBlockRef.current) {
+      return
+    }
+
+    clearActiveDrag()
+
     const width = containerRef.current.offsetWidth
-    const blockWidth = dragBlockRef.current.offsetWidth
-    const maxWidth = width - blockWidth
+    const dragBlockWidth = dragBlockRef.current.offsetWidth
+    const tileWidth = tileRef.current.offsetWidth
+    const startPosition = positionRef.current
+    const maxDragLeft = Math.max(0, width - dragBlockWidth)
+    const maxThumbLeft = Math.max(0, width - tileWidth)
+    const availableDragDistance = maxDragLeft - startPosition.dragLeft
+    const availableThumbDistance = maxThumbLeft - startPosition.thumbLeft
 
-    const tileWith  = tileRef.current.offsetWidth
-    const tileOffsetLeft = tileRef.current.offsetLeft
-    const containerMaxWidth = width - tileWith
-    const tileMaxWith = width - (tileWith + tileOffsetLeft)
-    const ratio = tileMaxWith / maxWidth
+    dragGeometryRef.current = {
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startPosition,
+      maxDragLeft,
+      maxThumbLeft,
+      thumbRatio: availableDragDistance > 0 ? availableThumbDistance / availableDragDistance : 0,
+    }
+    hasMovedRef.current = false
 
-    let isMoving = false
-    let tmpLeaveDragEvent: Event|any = null
-    let startX = 0
-    let currentThumbX = 0
-    if (touch) {
-      startX = touch.pageX - offsetLeft
-    } else {
-      startX = e.clientX - offsetLeft
+    dragBlockRef.current.setPointerCapture && dragBlockRef.current.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  }, [clearActiveDrag, containerRef, dragBlockRef, tileRef])
+
+  const getPositionFromPointerEvent = useCallback((e: PointerEvent): Position | null => {
+    const geometry = dragGeometryRef.current
+    if (!geometry || geometry.pointerId !== e.pointerId) {
+      return null
     }
 
-    const moveEvent = (e: Event|any) => {
-      isMoving = true
-      const mTouche = e.touches && e.touches[0];
+    const dragLeft = clamp(
+      geometry.startPosition.dragLeft + e.clientX - geometry.startClientX,
+      0,
+      geometry.maxDragLeft,
+    )
+    const thumbLeft = clamp(
+      geometry.startPosition.thumbLeft + (dragLeft - geometry.startPosition.dragLeft) * geometry.thumbRatio,
+      0,
+      geometry.maxThumbLeft,
+    )
 
-      let left = 0;
-      if (mTouche) {
-        left = mTouche.pageX - startX
-      } else {
-        left = e.clientX - startX
-      }
+    return {dragLeft, thumbLeft}
+  }, [])
 
-      const ctX = tileOffsetLeft + (left * ratio)
-      if (left >= maxWidth) {
-        setDragLeft(maxWidth)
-        currentThumbX = containerMaxWidth
-        setThumbLeft(currentThumbX)
-        return
-      }
-
-      if (left <= 0) {
-        setDragLeft(0)
-        currentThumbX = tileOffsetLeft
-        setThumbLeft(currentThumbX)
-        return
-      }
-
-      setDragLeft(left)
-      currentThumbX = currentThumbX = ctX
-      setThumbLeft(currentThumbX)
-
-      event.move && event.move(currentThumbX, data.thumbY || 0)
-
-      e.cancelBubble = true
-      e.preventDefault()
+  const moveEvent = useCallback((e: PointerEvent) => {
+    const position = getPositionFromPointerEvent(e)
+    if (!position) {
+      return
     }
 
-    const upEvent = (e: Event|any) => {
-      if (!checkTargetFather(dragBarRef.current, e)) {
-        return
+    if (position.dragLeft !== positionRef.current.dragLeft) {
+      hasMovedRef.current = true
+    }
+    schedulePosition(position)
+    e.preventDefault()
+  }, [getPositionFromPointerEvent, schedulePosition])
+
+  const upEvent = useCallback((e: PointerEvent) => {
+    const geometry = dragGeometryRef.current
+    if (!geometry || geometry.pointerId !== e.pointerId) {
+      return
+    }
+
+    const position = getPositionFromPointerEvent(e)
+    if (position) {
+      if (position.dragLeft !== positionRef.current.dragLeft) {
+        hasMovedRef.current = true
       }
+      schedulePosition(position)
+    }
+    flushAnimationFrame(hasMovedRef.current)
+    const point = positionRef.current
+    const hasMoved = hasMovedRef.current
+    clearActiveDrag()
 
-      clearEvent()
-
-      if (!isMoving) {
-        return
-      }
-      isMoving = false
-
-      if (currentThumbX < 0) {
-        return
-      }
-
-      event.confirm && event.confirm({x: parseInt(currentThumbX.toString()), y: data.thumbY || 0}, () => {
-        resetData()
-      })
-
-      e.cancelBubble = true
-      e.preventDefault()
+    if (!hasMoved) {
+      return
     }
 
-    const leaveDragBlockEvent = (e: Event|any) => {
-      tmpLeaveDragEvent = e
+    eventRef.current.confirm && eventRef.current.confirm({
+      x: Math.trunc(point.thumbLeft),
+      y: dataRef.current.thumbY || 0,
+    }, resetData)
+    e.preventDefault()
+  }, [clearActiveDrag, flushAnimationFrame, getPositionFromPointerEvent, resetData, schedulePosition])
+
+  const cancelEvent = useCallback((e: PointerEvent) => {
+    const geometry = dragGeometryRef.current
+    if (geometry && geometry.pointerId === e.pointerId) {
+      clearActiveDrag()
+    }
+  }, [clearActiveDrag])
+
+  useEffect(() => {
+    const dragBlock = dragBlockRef.current
+    if (!dragBlock) {
+      return
     }
 
-    const enterDragBlockEvent = () => {
-      tmpLeaveDragEvent = null
+    dragBlock.addEventListener('pointermove', moveEvent)
+    dragBlock.addEventListener('pointerup', upEvent)
+    dragBlock.addEventListener('pointercancel', cancelEvent)
+    dragBlock.addEventListener('lostpointercapture', cancelEvent)
+
+    return () => {
+      dragBlock.removeEventListener('pointermove', moveEvent)
+      dragBlock.removeEventListener('pointerup', upEvent)
+      dragBlock.removeEventListener('pointercancel', cancelEvent)
+      dragBlock.removeEventListener('lostpointercapture', cancelEvent)
     }
+  }, [cancelEvent, dragBlockRef, moveEvent, upEvent])
 
-    const leaveUpEvent = (_: Event|any) => {
-      if(!tmpLeaveDragEvent) {
-        return
-      }
-
-      upEvent(tmpLeaveDragEvent)
-      clearEvent()
-    }
-
-    const scope = config.scope
-    const dragDom = scope ? rootRef.current : dragBarRef.current
-    const scopeDom = scope ? rootRef.current : document.body
-
-    const clearEvent = () => {
-      scopeDom.removeEventListener("mousemove", moveEvent, false)
-      scopeDom.removeEventListener("touchmove", moveEvent, { passive: false })
-
-      dragDom.removeEventListener( "mouseup", upEvent, false)
-      dragDom.removeEventListener( "mouseenter", enterDragBlockEvent, false)
-      dragDom.removeEventListener( "mouseleave", leaveDragBlockEvent, false)
-      dragDom.removeEventListener("touchend", upEvent, false)
-
-      scopeDom.removeEventListener("mouseleave", upEvent, false)
-      scopeDom.removeEventListener("mouseup", leaveUpEvent, false)
-
-      setIsFreeze(false)
-    }
-    setIsFreeze(true)
-
-    scopeDom.addEventListener("mousemove", moveEvent, false)
-    scopeDom.addEventListener("touchmove", moveEvent, { passive: false })
-
-    dragDom.addEventListener( "mouseup", upEvent, false)
-    dragDom.addEventListener( "mouseenter", enterDragBlockEvent, false)
-    dragDom.addEventListener( "mouseleave", leaveDragBlockEvent, false)
-    dragDom.addEventListener("touchend", upEvent, false)
-
-    scopeDom.addEventListener("mouseleave", upEvent, false)
-    scopeDom.addEventListener("mouseup", leaveUpEvent, false)
-  }, [rootRef, dragBlockRef, containerRef, config, data, tileRef, dragBarRef, event, resetData])
-
-  const clearData = useCallback<any>(() => {
+  const clearData = useCallback(() => {
     resetData()
     clearCbs && clearCbs()
   }, [resetData, clearCbs])
 
-  const close = useCallback<any>(() => {
-    event.close && event.close()
+  const close = useCallback(() => {
+    clearActiveDrag()
+    eventRef.current.close && eventRef.current.close()
     resetData()
-  }, [event, resetData])
+  }, [clearActiveDrag, resetData])
 
-  const refresh = useCallback<any>(() => {
-    event.refresh && event.refresh()
+  const refresh = useCallback(() => {
+    clearActiveDrag()
+    eventRef.current.refresh && eventRef.current.refresh()
     resetData()
-  }, [event, resetData])
+  }, [clearActiveDrag, resetData])
 
-  const closeEvent = useCallback<any>((e: Event|any) => {
+  const closeEvent = useCallback((e: any) => {
     close()
-    e.cancelBubble = true
     e.preventDefault()
     return false
   }, [close])
 
-  const refreshEvent = useCallback<any>((e: Event|any) => {
+  const refreshEvent = useCallback((e: any) => {
     refresh()
-    e.cancelBubble = true
     e.preventDefault()
     return false
   }, [refresh])
 
-  const getPoint = useCallback<any>(() => {
-    return {
-      x: thumbLeft,
-      y: data.thumbY || 0
-    }
-  }, [data, thumbLeft])
+  const getPoint = useCallback(() => ({
+    x: positionRef.current.thumbLeft,
+    y: dataRef.current.thumbY || 0,
+  }), [])
 
-  const getState = useCallback<() => {dragLeft: number, thumbLeft: number}>(() => {
-    return {
-      dragLeft,
-      thumbLeft,
-    }
-  }, [thumbLeft, dragLeft])
+  const getState = useCallback(() => positionRef.current, [])
 
   return {
     getState,
