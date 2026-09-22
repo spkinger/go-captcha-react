@@ -54,8 +54,6 @@ const Index:FC<Props> = forwardRef<SlideRegionRef, Props>((props: Props, ref) =>
   const handler = useHandler(
     localData,
     localEvents,
-    localConfig,
-    rootRef,
     containerRef,
     tileRef,
     () => {
@@ -125,11 +123,10 @@ const Index:FC<Props> = forwardRef<SlideRegionRef, Props>((props: Props, ref) =>
         style={{
           width: (localData.thumbWidth || 0) + 'px',
           height: (localData.thumbHeight || 0) + 'px',
-          top: handler.thumbPoint.y + "px",
-          left: handler.thumbPoint.x + "px"
+          top: (localData.thumbY || 0) + "px",
+          left: (localData.thumbX || 0) + "px"
         }}
-        onMouseDown={handler.dragEvent}
-        onTouchStart={handler.dragEvent} >
+        onPointerDown={handler.dragEvent}>
         {hasDisplayImageState && (
           <img
             style={{}}
