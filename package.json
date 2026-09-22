@@ -1,6 +1,6 @@
 {
   "name": "go-captcha-react",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "license": "MIT",
   "private": false,
   "email": "wengaolng@gmail.com",
@@ -63,6 +63,7 @@
   "scripts": {
     "start": "tsdx watch",
     "build": "tsdx build",
+    "prepare": "npm run build",
     "test": "tsdx test --passWithNoTests",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
