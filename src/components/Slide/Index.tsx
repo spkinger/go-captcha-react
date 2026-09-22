@@ -57,12 +57,9 @@ const Index:FC<Props> = forwardRef<SlideRef, Props>((props: Props, ref) => {
   const handler = useHandler(
     localData,
     localEvents,
-    localConfig,
-    rootRef,
     containerRef,
     tileRef,
     dragBlockRef,
-    dragBarRef,
     () => {
       setLocalData({...localData, ...defaultSlideData()})
     }
@@ -143,7 +140,7 @@ const Index:FC<Props> = forwardRef<SlideRef, Props>((props: Props, ref) => {
           width: (localData.thumbWidth || 0) + 'px',
           height: (localData.thumbHeight || 0) + 'px',
           top: (localData.thumbY || 0) + "px",
-          left: handler.getState().thumbLeft + "px"
+          left: (localData.thumbX || 0) + "px"
         }}
       >
         {hasDisplayImageState && (
@@ -161,12 +158,10 @@ const Index:FC<Props> = forwardRef<SlideRef, Props>((props: Props, ref) => {
         <div
           className={classnames(styles.dragBlock, !hasDisplayImageState && styles.disabled)}
           ref={dragBlockRef}
-          onMouseDown={handler.dragEvent}
-          style={{left: handler.getState().dragLeft + "px"}}
+          onPointerDown={handler.dragEvent}
         >
           <div
             className={styles.dragBlockInline}
-            onTouchStart={handler.dragEvent}
           >
             <ArrowsIcon />
           </div>
