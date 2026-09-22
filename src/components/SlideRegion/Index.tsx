@@ -97,6 +97,18 @@ const Index:FC<Props> = forwardRef<SlideRegionRef, Props>((props: Props, ref) =>
   >
     <div className={classnames(styles.header, cstyles.header)}>
       <span>{localConfig.title}</span>
+      <div className={styles.iconBlock}>
+        <CloseIcon
+          width={localConfig.iconSize}
+          height={localConfig.iconSize}
+          onClick={handler.closeEvent}
+        />
+        <RefreshIcon
+          width={localConfig.iconSize}
+          height={localConfig.iconSize}
+          onClick={handler.refreshEvent}
+        />
+      </div>
     </div>
     <div
       className={styles.body}
@@ -134,20 +146,6 @@ const Index:FC<Props> = forwardRef<SlideRegionRef, Props>((props: Props, ref) =>
             alt=""
           />
         )}
-      </div>
-    </div>
-    <div className={styles.footer}>
-      <div className={styles.iconBlock}>
-        <CloseIcon
-          width={localConfig.iconSize}
-          height={localConfig.iconSize}
-          onClick={handler.closeEvent}
-        />
-        <RefreshIcon
-          width={localConfig.iconSize}
-          height={localConfig.iconSize}
-          onClick={handler.refreshEvent}
-        />
       </div>
     </div>
   </div>
